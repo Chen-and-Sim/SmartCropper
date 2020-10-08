@@ -1,4 +1,4 @@
-![](https://github.com/Chen-and-Sim/SmartCropper/tree/main/user-guide-images/cn-01.png)
+![](user-guide-images/cn-01.png)
 ![](https://github.com/Chen-and-Sim/SmartCropper/tree/main/user-guide-images/cn-02.png)
 ![](https://github.com/Chen-and-Sim/SmartCropper/tree/main/user-guide-images/cn-03.png)
 ![](https://github.com/Chen-and-Sim/SmartCropper/tree/main/user-guide-images/cn-04.png)
