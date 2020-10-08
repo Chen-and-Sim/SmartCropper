@@ -1,3 +1,4 @@
+# Crop sheet music images fast! | 乐谱裁剪神器！| SmartCropper 智剪
 ![](user-guide-images/cn-01.png)
 ![](user-guide-images/cn-02.png)
 ![](user-guide-images/cn-03.png)
