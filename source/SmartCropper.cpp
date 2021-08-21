@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
@@ -18,15 +19,15 @@ void about(char* str)
 {
 	if(language == English)
 	{
-		cout << "智剪 SmartCropper v1.0.0913\n"
-			  << "(c) 2020 Ji-woon Sim, Wenge Chen\n"
+		cout << "智剪 SmartCropper v1.2.0409\n"
+			  << "(c) 2021 Ji-woon Sim, Wenge Chen\n"
 			  << "Feedback Email: rcswex@163.com\n"
 			  << "Feedback QQ: 925792714\n\n";
 	}
 	else
 	{
-		cout << "智剪 SmartCropper v1.0.0913\n"
-			  << "(c) 2020 沈智云，陈文戈\n"
+		cout << "智剪 SmartCropper v1.2.0409\n"
+			  << "(c) 2021 沈智云，陈文戈\n"
 			  << "问题反馈邮箱：rcswex@163.com\n"
 			  << "问题反馈QQ：925792714\n\n";
 	}
@@ -56,15 +57,19 @@ void help(char* str)
 			  << "-p [Path]             path [Path]               Set the path of output file(s) to [Path]. 'Desktop' in either\n"
 				  "                                                upper or lower case is reserved for the shortcut to your desktop.\n"
 				  "                                                [DOES NOT DO ANY INPUT CHECK.]\n\n"
-			  << "-c [Begin] [End]      create [Begin] [End]      Create an area that contains blocks ranging from [Begin] to [End].\n"
-			  << "-d [Number]           delete [Number]           Delete the selected area whose index is [Number].\n"
+			  << "-c [Begin] [End]      create [Begin] [End]      Create an area that contains blocks numbered from [Begin] to [End].\n"
+			  << "-d [Number]           delete [Number]           Delete the selected area whose serial number is [Number].\n"
 			  << "-e [Num1] [Num2]      separate [Num1] [Num2]    Separate the selected area [Num1] along the block [Num2]. The\n"
 				  "                                                block [Num2] will belong to the former one of the separated areas.\n"
-			  << "-r [Begin] [End]      merge [Begin] [End]       Merge the selected areas whose indexes lie within [Begin] to [End].\n"
-			  << "-m [Beg] [End] [Num]  modify [Beg] [End] [Num]  Modify the selected area whose index is [Num]. The range of\n"
-				  "                                                blocks in this area will be changed as from [Beg] to [End].\n"
-			  << "-v [Number]           preview [Number]          Preview the selected area whose index is [Number].\n\n"
+			  << "-r [Begin] [End]      merge [Begin] [End]       Merge the selected areas numbered from [Begin] to [End].\n"
+			  << "-m [Beg] [End] [Num]  modify [Beg] [End] [Num]  The selected area with serial number [Number] is changed to include\n"
+				  "                                                blocks numbered from [Begin] to [End].\n"
+			  << "-v [Number]           preview [Number]          Preview the selected area whose serial number is [Number].\n\n"
 			  << "-b [Height] [Span]    setmerge [Height] [Span]  Set block height and span threshold for auto-merging.\n"
+			  << "-g [P] [Hor] [Ver]    enlarge [P] [Hor] [Ver]   Enlarge the output image, so that the target image has an aspect\n"
+				  "                                                ratio of [Hor]:[Ver] and a [P]% of margin space.\n"
+				  "                                                It can be called with single parameter [P], and the default aspect\n"
+				  "                                                ratio 16:9 is used.\n"
 			  << "-t [Value]            tolerance [Value]         Change the tolerance value to [Value]. A coloured pixel is more\n"
 				  "                                                likely to be regarded as background if the value is set higher.\n"
 				  "                                                The range is 0 to 255.\n\n";
@@ -95,6 +100,8 @@ void help(char* str)
 			  << "-m [Beg] [End] [Num]  modify [Beg] [End] [Num]  修改编号为[Num]的选区。选区内区块的范围改为[Beg]到[End]。\n"
 			  << "-v [Number]           preview [Number]          预览编号为[Number]的选区。\n\n"
 			  << "-b [Height] [Span]    setmerge [Height] [Span]  将自动合并的高度上限和间隔上限分别设置为[Height]和[Span]。\n"
+			  << "-g [P] [Hor] [Ver]    enlarge [P] [Hor] [Ver]   扩大输出图片。目标图片的纵横比是[Hor]:[Ver]，且有[P]%的边缘。\n"
+				  "                                                可以以单参数[P]调用，此时使用默认纵横比16:9。\n"
 			  << "-t [Value]            tolerance [Value]         将容差值改变为[Value]。当容差值较大时，有色的像素更有可能被视为\n"
 				  "                                                背景像素、取值范围是0到255。\n\n";
 	}
@@ -136,7 +143,16 @@ void save(char* str)
 	{
 		char cmd2[200] = "mkdir ";
 		strcat(cmd2, cmd1);
+		strcat(cmd2, " > nul 2> nul");
 		system(cmd2);
+		if(access(cmd1, X_OK) != 0)
+		{
+			if(language == English)
+				cout << "Permisson denied to create a folder.\n\n";
+			else
+				cout << "没有权限建立文件夹。\n\n";
+			return;
+		}
 	}
 
 	for(int i = 0; i < sel_area_count; ++i)
@@ -154,7 +170,8 @@ void save(char* str)
 	   	GetEncoderClsid(L"image/jpeg", &encoderClsid);
 
 		int begin = sel_area_begin[i];
-		int end = sel_area_end[i];	
+		int end = sel_area_end[i];
+		int image = block_in_image[begin];
 		int y_begin = block_Y_begin[begin];
 		int y_end = block_Y_end[end];
 		int x_begin = block_X_begin[begin];
@@ -166,13 +183,36 @@ void save(char* str)
 			if(block_X_end[j] > x_end)
 				x_end = block_X_end[j];
 		}
-		Bitmap* cur_bitmap = new Bitmap(w_cur_name);
-		Bitmap* output_bitmap = cur_bitmap -> Clone(x_begin, y_begin, x_end - x_begin + 1,
-																  y_end - y_begin + 1, PixelFormat24bppRGB);
+		int orig_width  = x_end - x_begin + 1;
+		int orig_height = y_end - y_begin + 1;
+		int new_width, new_height;
+		if(aspect_hor == 0 || aspect_ver == 0)
+		{
+			new_width  = orig_width  * (1.0 + 2.0 * proportion / 100.0);
+			new_height = orig_height * (1.0 + 2.0 * proportion / 100.0);
+		}
+		else
+		{
+			new_width  = max(orig_width, orig_height * aspect_hor / aspect_ver) * (1.0 + 2.0 * proportion / 100.0);
+			new_height = max(orig_width * aspect_ver / aspect_hor, orig_height) * (1.0 + 2.0 * proportion / 100.0);
+		}
+		int margin_hor = (new_width - orig_width) / 2;
+		int margin_ver = (new_height - orig_height) / 2;
+		
+		Bitmap* cur_bitmap = new Bitmap(w_cur_name[image]);
+		Bitmap* output_bitmap = new Bitmap(new_width, new_height);
+		Graphics graphics(output_bitmap);
+		Color white(255, 255, 255, 255);
+		SolidBrush solidbrush(white);
+		graphics.FillRectangle(&solidbrush, 0, 0, new_width, new_height);
+		RectF destrect(margin_hor, margin_ver, orig_width, orig_height);
+		RectF sourcerect(x_begin, y_begin, orig_width, orig_height);
+		graphics.DrawImage(cur_bitmap, destrect, sourcerect, UnitPixel, NULL);
+		graphics.Save();
 		output_bitmap -> Save(w_output_name, &encoderClsid, NULL);
 		delete cur_bitmap, output_bitmap;
 	}
-
+	
 	if(language == English)
 		cout << "Saved successfully.\n\n";
 	else
@@ -185,36 +225,50 @@ void current_settings(char* str)
 	if(language == English)
 	{
 		cout << "\nLanguage: English\n"
-			  << "Name of current file: " << cur_filename << endl
+			  << "Name of current file: " << (loaded_all ? "N/A" : cur_filename[0]) << endl
 			  << "Format of current file: " << ((cur_format == PNG) ? "PNG\n" : "JPG\n")
 			  << "Path of current file: " << cur_path << endl
 			  << "Name of output file(s): " << output_name_format << endl
 			  << "Format of output file(s): " << ((output_format == PNG) ? "PNG\n" : "JPG\n")
 			  << "Path of output file(s): " << output_path << "\n\n"
+			  << "Number of images: " << image_count << endl
 			  << "Number of blocks: " << block_count << endl
 			  << "Number of selected areas: " << sel_area_count << endl;
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "    Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "    Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 
+				  << ", in image #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 		cout << "\nTolerance value: " << tolerance << endl
 			  << "Auto-merge height threshold: " << merge_height << endl
-			  << "Auto-merge span threshold: " << merge_span << "\n\n";
+			  << "Auto-merge span threshold: " << merge_span << endl
+			  << "Proportion of margin: " << proportion << endl;
+		if(aspect_hor == 0 || aspect_ver == 0)
+			cout << "Aspect ratio: default\n\n";
+		else
+			cout << "Aspect ratio: " << aspect_hor << ":" << aspect_ver << "\n\n";
 	}
 	else
 	{
 		cout << "\n语言：中文\n"
-			  << "当前文件名称：" << cur_filename << endl
+			  << "当前文件名称：" << (loaded_all ? "N/A" : cur_filename[0]) << endl
 			  << "当前文件格式：" << ((cur_format == PNG) ? "PNG\n" : "JPG\n")
 			  << "当前文件路径：" << cur_path << endl
 			  << "输出文件名称：" << output_name_format << endl
 			  << "输出文件格式：" << ((output_format == PNG) ? "PNG\n" : "JPG\n")
 			  << "输出文件路径：" << output_path << "\n\n"
+			  << "图片数量: " << image_count << endl
 			  << "区块数量：" << block_count << endl
 			  << "选区数量：" << sel_area_count << endl;
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "    选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "    选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 
+				  << "，位于图片 #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 		cout << "\n容差值：" << tolerance << endl
 			  << "自动合并高度上限：" << merge_height << endl
-			  << "自动合并间隔上限：" << merge_span << "\n\n";
+			  << "自动合并间隔上限：" << merge_span << endl
+			  << "边缘占比：" << proportion << endl;
+		if(aspect_hor == 0 || aspect_ver == 0)
+			cout << "纵横比：默认\n\n";
+		else
+			cout << "纵横比：" << aspect_hor << ":" << aspect_ver << "\n\n";
 	}
 }
 
@@ -234,10 +288,13 @@ void load_image(char* str)
 	}
 	
 	fin.close();
-	set_name(str);
+	set_name(0, str);
 	loaded = true;
+	loaded_all = false;
+	image_count = 1;
+	strcpy(output_name_format, "%f-%s");
 	
-	Bitmap* cur_bitmap = new Bitmap(w_cur_name);
+	Bitmap* cur_bitmap = new Bitmap(w_cur_name[0]);
 	Color color;
 	const int width = cur_bitmap -> GetWidth();
 	const int height = cur_bitmap -> GetHeight();
@@ -247,7 +304,7 @@ void load_image(char* str)
 		cur_bitmap -> GetPixel(y * width / height, y, &color);
 		val += (255 - min( min(color.GetR(), color.GetG()), color.GetB() ));
 	}
-	tolerance = val / height;
+	tolerance = ceil(val / height);
 	delete cur_bitmap;
 	
 	if(language == English)
@@ -274,7 +331,7 @@ void load_all(char* str)
 	strcat(str1, "\\*");
 	intptr_t handle = _findfirst(str1, &fileinfo);
 	vector<Bitmap*> bitmaps;
-	int total_width = 0, total_height = 0;
+	int max_width = 0, index = 0;
 	
 	if(handle != -1)
 	{
@@ -286,64 +343,85 @@ void load_all(char* str)
 				strcpy(str2, str);
 				strcat(str2, "\\");
 				strcat(str2, fileinfo.name);
-				set_name(str2);
-				Bitmap* cur_bitmap = new Bitmap(w_cur_name);
+				set_name(index, str2);
+				Bitmap* cur_bitmap = new Bitmap(w_cur_name[index]);
 				bitmaps.push_back(cur_bitmap);
 				const int width = cur_bitmap -> GetWidth();
-				const int height = cur_bitmap -> GetHeight();
-				if(width > total_width)
-					total_width = width;
-				total_height += height;
+				if(width > max_width)
+					max_width = width;
 			}
    	}	while(_findnext(handle, &fileinfo) == 0);
 	}
 	_findclose(handle);
 
-   if(bitmaps.size() == 0)
+   image_count = bitmaps.size();
+   if(image_count == 0)
    {
    	if(language == English)
 			cout << "Image not found.\n\n";
 		else
 			cout << "未找到图片文件。\n\n";
+		strcpy(output_path, "crops\\");
 		return;
-	}
-
-	Bitmap* merged = new Bitmap(total_width, total_height, PixelFormat24bppRGB);
-	Graphics graphics(merged);
-	int _y = 0;
-	for(int i = 0; i < bitmaps.size(); ++i)
-	{
-		const int width = bitmaps[i] -> GetWidth();
-		const int height = bitmaps[i] -> GetHeight();
-		int scaled_height = height * total_width / width;
-		graphics.DrawImage(bitmaps[i], 0, _y, total_width, scaled_height);
-		_y += scaled_height;
 	}
 	
 	Color color;
-	int val = 0;
-	for(int y = 0; y < total_height; ++y)
-	{
-		merged -> GetPixel(y * total_width / total_height, y, &color);
-		val += (255 - min( min(color.GetR(), color.GetG()), color.GetB() ));
-	}
-	tolerance = val / total_height;
-
+	int val = 0, total_height = 0;
 	CLSID encoderClsid;
 	GetEncoderClsid(L"image/png", &encoderClsid);
 	if(access("__temp__", X_OK) != 0)
-		system("mkdir __temp__");
-	merged -> Save(L"__temp__\\merged.png", &encoderClsid, NULL);
+		system("mkdir __temp__ > nul 2> nul");
+	if(access("__temp__", X_OK) != 0)
+	{
+		if(language == English)
+			cout << "Permisson denied to create a temporary folder.\n\n";
+		else
+			cout << "没有权限建立临时文件夹。\n\n";
+		return;
+	}
 	
-	if(language == English)
-		cout << "Successfully loaded " << bitmaps.size() << " image(s).\n\n";
-	else
-		cout << "成功加载" << bitmaps.size() << "张图片。\n\n";
-	delete merged;
-	for(int i = 0; i < bitmaps.size(); ++i)
+	for(int i = 0; i < image_count; ++i)
+	{
+		const int width = bitmaps[i] -> GetWidth();
+		const int height = bitmaps[i] -> GetHeight();
+		int new_height = ceil(height * max_width / width);
+		total_height += new_height;
+		
+		Bitmap* enlarged = new Bitmap(max_width, new_height, PixelFormat24bppRGB);
+		Graphics graphics(enlarged);
+		RectF destrect(0, 0, max_width, new_height);
+		RectF sourcerect(0, 0, width, height);
+		graphics.DrawImage(bitmaps[i], destrect, sourcerect, UnitPixel, NULL);
+		graphics.Save();
+		
+		char output_name[200] = "__temp__\\", str[10];
+		wchar_t w_output_name[200];
+		itoa(i + 1, str, 10);
+		strcat(output_name, str);
+		strcat(output_name, ".png");
+		mbstowcs(w_output_name, output_name, strlen(output_name));
+		w_output_name[strlen(output_name)] = L'\0';
+		enlarged -> Save(w_output_name, &encoderClsid, NULL);
+		set_name(i, output_name);
+		
+		for(int y = 0; y < new_height; ++y)
+		{
+			enlarged -> GetPixel(y * max_width / new_height, y, &color);
+			val += (255 - min( min(color.GetR(), color.GetG()), color.GetB() ));
+		}
+		delete enlarged;
+	}
+	tolerance = ceil(val / total_height);
+	for(int i = 0; i < image_count; ++i)
 		delete bitmaps[i];
+
+	if(language == English)
+		cout << "Successfully loaded " << image_count << " image(s).\n\n";
+	else
+		cout << "成功加载" << image_count << "张图片。\n\n";
 	loaded = true;
-	set_name("__temp__\\merged.png");
+	loaded_all = true;
+	strcpy(output_name_format, "%s");
 	cur_format = PNG;
 	output_format = PNG;
 	detect_block();
@@ -364,9 +442,9 @@ void set_output_format(char* str)
 	else
 	{
 		if(language == English)
-			cout << "Wrong command. Please check your input and try again.\n\n";
+			cout << "Invalid input. Please check your input and try again.\n\n";
 		else
-			cout << "错误的指令。请检查输入后重试。\n\n";
+			cout << "输入错误。请检查输入后重试。\n\n";
 		return;
 	}
 	if(language == English)
@@ -448,6 +526,14 @@ void create_area(char* str)
 			cout << "输入错误。请检查输入后重试。\n\n";
 		return;
 	}
+	else if(block_in_image[begin - 1] < block_in_image[end - 1])
+	{
+		if(language == English)
+			cout << "Can not create area with blocks from different images. Please check your input and try again.\n\n";
+		else
+			cout << "无法创建包含来自不同图片的区块的选区。请检查输入后重试。\n\n";
+		return;
+	}
 	
 	++sel_area_count;
 	sel_area_begin.push_back(begin - 1);
@@ -456,13 +542,15 @@ void create_area(char* str)
 	{
 		cout << "Succeeded to create.\n\n" << "Current selected areas:\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << ", in image #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	else
 	{
 		cout << "创建成功。\n\n" << "当前选区：\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << "，位于图片 #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	cout << endl;
 }
@@ -489,13 +577,15 @@ void delete_area(char* str)
 	{
 		cout << "Succeeded to delete.\n\n" << "Current selected areas:\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << ", in image #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	else
 	{
 		cout << "删除成功。\n\n" << "当前选区：\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << "，位于图片 #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	cout << endl;
 }
@@ -536,13 +626,15 @@ void separate_area(char* str)
 	{
 		cout << "Succeeded to separate.\n\n" << "Current selected areas:\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << ", in image #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	else
 	{
 		cout << "分离成功。\n\n" << "当前选区：\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << "，位于图片 #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	cout << endl;
 }
@@ -572,7 +664,7 @@ void merge_area(char* str)
 			cout << "输入错误。请检查输入后重试。\n\n";
 		return;
 	}
-	
+
 	sel_area_count = sel_area_count - end + begin;
 	int block_begin = sel_area_begin[begin - 1];
 	int block_end = sel_area_end[begin - 1];
@@ -583,6 +675,16 @@ void merge_area(char* str)
 		if(sel_area_end[i - 1] > block_end)
 			block_end = sel_area_end[i - 1];
 	}
+
+	if(block_in_image[block_begin] < block_in_image[block_end])
+	{
+		if(language == English)
+			cout << "Can not merge area with blocks from different images. Please check your input and try again.\n\n";
+		else
+			cout << "无法合并包含来自不同图片的区块的选区。请检查输入后重试。\n\n";
+		return;
+	}
+
 	sel_area_begin[begin - 1] = block_begin;
 	sel_area_end[begin - 1] = block_end;
 	sel_area_begin.erase(sel_area_begin.begin() + begin, sel_area_begin.begin() + end);
@@ -592,13 +694,15 @@ void merge_area(char* str)
 	{
 		cout << "Succeeded to merge.\n\n" << "Current selected areas:\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << ", in image #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	else
 	{
 		cout << "合并成功。\n\n" << "当前选区：\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << "，位于图片 #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	cout << endl;
 }
@@ -638,6 +742,14 @@ void modify_area(char* str)
 			cout << "输入错误。请检查输入后重试。\n\n";
 		return;
 	}
+	else if(block_in_image[begin - 1] < block_in_image[end - 1])
+	{
+		if(language == English)
+			cout << "Can not modify area so that the area includes blocks from different images. Please check your input and try again.\n\n";
+		else
+			cout << "无法修改选区使得它包含的区块来自不同图片。请检查输入后重试。\n\n";
+		return;
+	}
 	
 	sel_area_begin[index - 1] = begin - 1;
 	sel_area_end[index - 1] = end - 1;
@@ -645,13 +757,15 @@ void modify_area(char* str)
 	{
 		cout << "Succeeded to modify.\n\n" << "Current selected areas:\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << ", in image #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	else
 	{
 		cout << "修改成功。\n\n" << "当前选区：\n";
 		for(int i = 0; i < sel_area_count; ++i)
-			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+			cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+				  << "，位于图片 #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 	}
 	cout << endl;
 }
@@ -690,6 +804,7 @@ void preview(char* str)
 	
 	int begin = sel_area_begin[value - 1];
 	int end = sel_area_end[value - 1];
+	int image = block_in_image[begin];
 	int y_begin = block_Y_begin[begin];
 	int y_end = block_Y_end[end];
 	int x_begin = block_X_begin[begin];
@@ -701,13 +816,21 @@ void preview(char* str)
 		if(block_X_end[i] > x_end)
 			x_end = block_X_end[i];
 	}
-	Bitmap* cur_bitmap = new Bitmap(w_cur_name);
+	Bitmap* cur_bitmap = new Bitmap(w_cur_name[image]);
 	Bitmap* pre_bitmap = cur_bitmap -> Clone(x_begin, y_begin, x_end - x_begin + 1,
 														  y_end - y_begin + 1, PixelFormat24bppRGB);
 	
    Status stat = pre_bitmap -> Save(w_preview_name, &encoderClsid, NULL);
 	if(access("__temp__", X_OK) != 0)
-		system("mkdir __temp__");
+		system("mkdir __temp__ > nul 2> nul");
+	if(access("__temp__", X_OK) != 0)
+	{
+		if(language == English)
+			cout << "Permisson denied to create a temporary folder.\n\n";
+		else
+			cout << "没有权限建立临时文件夹。\n\n";
+		return;
+	}
 	pre_bitmap -> Save(w_preview_name, &encoderClsid, NULL);
 	delete cur_bitmap, pre_bitmap;
 
@@ -751,6 +874,70 @@ void set_merge(char* str)
 	else
 		cout << "设置成功。\n\n";
 	detect_block();
+}
+
+void set_enlarge(char* str)
+{
+	if(!check_loaded())  return;
+	
+	char str1[10], str2[10], str3[10];
+	int pos1 = 0, pos2 = 0;
+	while(pos1 < strlen(str) && str[pos1] != ' ')
+		++pos1;
+	strncpy(str1, str, pos1);
+	str1[pos1] = '\0';
+	
+	while(pos1 < strlen(str) && str[pos1] == ' ')
+		++pos1;
+	pos2 = pos1;
+	while(pos2 < strlen(str) && str[pos2] != ' ')
+		++pos2;
+	strncpy(str2, str + pos1, pos2 - pos1);
+	str2[pos2 - pos1] = '\0';
+	
+	while(pos2 < strlen(str) && str[pos2] == ' ')
+		++pos2;
+	strcpy(str3, str + pos2);
+	
+	char *pch1 = str1, *pch2;
+	int _p, _h, _v;
+	bool valid = true;
+	while(*pch1 != '\0')
+	{
+		if(*pch1 < '0' || *pch1 > '9')
+		{
+			valid = false;
+			break;
+		}
+		++pch1;
+	}
+	_p = strtol(str1, &pch2, 10);
+	
+	if(strlen(str2) == 0)
+	{
+		_h = 16;  _v = 9;
+	}
+	else
+	{
+		_h = strtol(str2, &pch2, 10);
+		_v = strtol(str3, &pch2, 10);
+	}
+	if(!valid || _p < 0 || _h <= 0 || _v <= 0)
+	{
+		if(language == English)
+			cout << "Invalid input. Please check your input and try again.\n\n";
+		else
+			cout << "输入错误。请检查输入后重试。\n\n";
+		return;
+	}
+
+	proportion = _p;
+	aspect_hor = _h;
+	aspect_ver = _v;
+	if(language == English)
+		cout << "Success.\n\n";
+	else
+		cout << "设置成功。\n\n";
 }
 
 void set_tolerance(char* str)
@@ -819,7 +1006,7 @@ bool check_format(char* str)
 	else  return false;
 }
 
-void set_name(char* str)
+void set_name(int index, char* str)
 {
 	char* pch = strrchr(str, '/');
 	if(pch == nullptr)
@@ -827,18 +1014,18 @@ void set_name(char* str)
 	
 	if(pch == nullptr)
 	{
-		strcpy(cur_filename, str);
+		strcpy(cur_filename[index], str);
 		strcpy(cur_path, "./");
 	}
 	else
 	{
-		strcpy(cur_filename, pch + 1);
+		strcpy(cur_filename[index], pch + 1);
 		strncpy(cur_path, str, pch + 1 - str);
 		cur_path[pch + 1 - str] = '\0';
 	}
 	
-	mbstowcs(w_cur_name, str, strlen(str));
-	w_cur_name[strlen(str)] = L'\0';
+	mbstowcs(w_cur_name[index], str, strlen(str));
+	w_cur_name[index][strlen(str)] = L'\0';
 }
 
 void set_output_name(char* output_name, int index)
@@ -867,7 +1054,8 @@ void set_output_name(char* output_name, int index)
 			}
 			else if(ch == 'f')
 			{
-				strcat(output_name, cur_filename);
+				if(!loaded_all)
+					strcat(output_name, cur_filename[0]);
 				char* pch = strrchr(output_name, '.');
 				if(pch != nullptr)
 					*pch = '\0';
@@ -952,87 +1140,98 @@ bool is_background(Color color)
 
 void detect_block() 
 {
-	Bitmap* cur_bitmap = new Bitmap(w_cur_name);
-	const int HEIGHT = cur_bitmap -> GetHeight();
-	const int WIDTH  = cur_bitmap -> GetWidth();
-	
-	bool* is_bg_line = new bool[HEIGHT];
-	for(int y = 0; y < HEIGHT; ++y)
-	{
-		Color color;
-		is_bg_line[y] = true;
-		for(int x = 0; x < WIDTH; ++x)
-		{
-			cur_bitmap -> GetPixel(x, y, &color);
-			if(!is_background(color))
-			{
-				is_bg_line[y] = false;
-				break;
-			}
-		}
-	}
-	
+	block_in_image.clear();
 	block_X_begin.clear();  block_X_end.clear();
 	block_Y_begin.clear();  block_Y_end.clear();
 	block_count = 0;
-	for(int y = 0; y < HEIGHT; ++y)
+
+	for(int i = 0; i < image_count; ++i)
 	{
-		int begin = y, end;
-		bool record = false;
-		while(y < HEIGHT && !is_bg_line[y])
+		Bitmap* cur_bitmap = new Bitmap(w_cur_name[i]);
+		const int HEIGHT = cur_bitmap -> GetHeight();
+		const int WIDTH  = cur_bitmap -> GetWidth();
+
+		bool* is_bg_line = new bool[HEIGHT];
+		for(int y = 0; y < HEIGHT; ++y)
 		{
-			record = true;
-			end = (y++);
-		}
-		if(record)
-		{
-			block_Y_begin.push_back(begin);
-			block_Y_end.push_back(end);
-			block_count++;
-		}
-	}
-	for(int i = 0; i < block_count; ++i)
-	{
-		Color color;
-		for(int x = 0; x < WIDTH; ++x)
-		{
-			bool intersect = false;
-			for(int y = block_Y_begin[i]; y <= block_Y_end[i]; ++y)
+			Color color;
+			is_bg_line[y] = true;
+			for(int x = 0; x < WIDTH; ++x)
 			{
 				cur_bitmap -> GetPixel(x, y, &color);
 				if(!is_background(color))
 				{
-					intersect = true;
+					is_bg_line[y] = false;
 					break;
 				}
 			}
-			if(intersect)
-			{
-				block_X_begin.push_back(x);
-				break;
-			}
 		}
-		for(int x = WIDTH - 1; x >= 0; --x)
+	
+		for(int y = 0; y < HEIGHT; ++y)
 		{
-			bool intersect = false;
-			for(int y = block_Y_begin[i]; y <= block_Y_end[i]; ++y)
+			int begin = y, end;
+			bool record = false;
+			while(y < HEIGHT && !is_bg_line[y])
 			{
-				cur_bitmap -> GetPixel(x, y, &color);
-				if(!is_background(color))
+				record = true;
+				end = (y++);
+			}
+			if(record)
+			{
+				block_in_image.push_back(i);
+				block_Y_begin.push_back(begin);
+				block_Y_end.push_back(end);
+				block_count++;
+			}
+		}
+	
+		int block_min = block_count - 1, block_max = block_count - 1;
+		while(block_min > 0 && block_in_image[block_min - 1] == i)
+			--block_min;
+		
+		for(int i = block_min; i <= block_max; ++i)
+		{
+			Color color;
+			for(int x = 0; x < WIDTH; ++x)
+			{
+				bool intersect = false;
+				for(int y = block_Y_begin[i]; y <= block_Y_end[i]; ++y)
 				{
-					intersect = true;
+					cur_bitmap -> GetPixel(x, y, &color);
+					if(!is_background(color))
+					{
+						intersect = true;
+						break;
+					}
+				}
+				if(intersect)
+				{
+					block_X_begin.push_back(x);
 					break;
 				}
 			}
-			if(intersect)
+			for(int x = WIDTH - 1; x >= 0; --x)
 			{
-				block_X_end.push_back(x);
-				break;
+				bool intersect = false;
+				for(int y = block_Y_begin[i]; y <= block_Y_end[i]; ++y)
+				{
+					cur_bitmap -> GetPixel(x, y, &color);
+					if(!is_background(color))
+					{
+						intersect = true;
+						break;
+					}
+				}
+				if(intersect)
+				{
+					block_X_end.push_back(x);
+					break;
+				}
 			}
 		}
+		delete cur_bitmap;
+		delete[] is_bg_line;
 	}
-	delete cur_bitmap;
-	delete[] is_bg_line;
 
 	if(block_count == 0)
 	{
@@ -1059,8 +1258,13 @@ void auto_merge()
 	int i = 0;
 	while(i < block_count)
 	{
+		int image = block_in_image[i];
+		int max_block = i;
+		while(max_block < block_count - 1 && block_in_image[max_block + 1] == image)
+			++max_block;
+		
 		int begin = i, end = i;
-		while(i < block_count - 1)
+		while(i < max_block)
 		{
 			bool b = ((block_Y_end[i] - block_Y_begin[i] < merge_height) ||
 						 (block_Y_end[i + 1] - block_Y_begin[i + 1] < merge_height)) &&
@@ -1083,13 +1287,15 @@ void auto_merge()
 		{
 			cout << "Current selected areas:\n";
 			for(int i = 0; i < sel_area_count; ++i)
-				cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+				cout << "Selected area #" << i + 1 << ": block " << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+					  << ", in image #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 		}
 		else
 		{
 			cout << "当前选区：\n";
 			for(int i = 0; i < sel_area_count; ++i)
-				cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1 << endl;
+				cout << "选区 #" << i + 1 << "：区块" << sel_area_begin[i] + 1 << " - " << sel_area_end[i] + 1
+					  << "，位于图片 #" << block_in_image[sel_area_begin[i]] + 1 << endl;
 		}
 	}
 	cout << endl;
